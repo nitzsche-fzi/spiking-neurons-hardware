@@ -1,0 +1,442 @@
+diff --git a/implementation/utils/fixed_pkg_2008.vhd b/implementation/utils/fixed_pkg_2008.vhd
+index fd63956..09c2185 100644
+--- a/implementation/utils/fixed_pkg_2008.vhd
++++ b/implementation/utils/fixed_pkg_2008.vhd
+@@ -22,6 +22,9 @@ use ieee.numeric_std.all;
+ use std.textio.all;
+ -- synthesis translate_on
+ 
++USE ieee.math_real.log2;
++USE ieee.math_real.ceil;
++
+ package fixed_pkg is
+   --%%% Uncomment the Generics
+ --  new work.fixed_generic_pkg
+@@ -32,8 +35,8 @@ package fixed_pkg is
+ --    no_warning           => false  -- show warnings
+ --    );
+   --%%% REMOVE THE REST OF THIS FILE.
+-  constant fixed_round_style    : BOOLEAN := true;  -- round
+-  constant fixed_overflow_style : BOOLEAN := true;  -- saturate
++  constant fixed_round_style    : BOOLEAN := false;  -- round
++  constant fixed_overflow_style : BOOLEAN := false;  -- saturate
+   constant fixed_guard_bits     : NATURAL := 3;     -- number of guard bits
+   constant no_warning           : BOOLEAN := false; -- issue warnings
+   -- Author David Bishop (dbishop@vhdl.org)
+@@ -48,6 +51,8 @@ package fixed_pkg is
+   type     ufixed is array (INTEGER range <>) of STD_LOGIC;
+   -- base Signed fixed point type, downto direction assumed
+   type     sfixed is array (INTEGER range <>) of STD_LOGIC;
++  
++  type tuple is array (0 to 1) of integer;
+   -----------------------------------------------------------------------------
+   -- Fixed point type is defined as follows:
+   -- 0000000000
+@@ -746,6 +751,16 @@ package fixed_pkg is
+     constant guard_bits     : NATURAL := fixed_guard_bits)   -- # of guard bits
+     return sfixed;
+ 
++      -- Real to sfixed
++  function real_range (
++    arg                     : REAL;     -- real
++    constant left_index     : INTEGER;  -- size of integer portion
++    constant right_index    : INTEGER;  -- size of fraction
++    constant overflow_style : BOOLEAN := fixed_overflow_style;  -- saturate by default
++    constant round_style    : BOOLEAN := fixed_round_style;  -- rounding by default
++    constant guard_bits     : NATURAL := fixed_guard_bits)   -- # of guard bits
++    return tuple;
++
+   function to_sfixed (
+     arg                     : REAL;     -- real
+     size_res                : sfixed;   -- for size only
+@@ -3967,6 +3982,42 @@ package body fixed_pkg is
+     return result;
+   end function to_sfixed;
+ 
++  function real_range (
++     arg                     : REAL;     -- real
++     constant left_index     : INTEGER;  -- size of integer portion
++     constant right_index    : INTEGER;  -- size of fraction
++     constant overflow_style : BOOLEAN := fixed_overflow_style;  -- saturate by default
++     constant round_style    : BOOLEAN := fixed_round_style;  -- turn on rounding by default
++     constant guard_bits     : NATURAL := fixed_guard_bits)   -- # of guard bits
++     return tuple is
++     constant fw      : INTEGER                                    := mine (right_index, right_index);  -- catch literals
++     variable msb : INTEGER := right_index;
++     variable lsb : INTEGER := left_index-1;
++     variable result : tuple;
++     variable presult : REAL;
++     variable upper_bound : INTEGER := 1;
++   begin
++     if (left_index < fw) then           -- null range
++       return (result'high, result'low);
++     end if;
++     presult := abs(arg);
++
++     if (presult >= 1.0) then
++      upper_bound := integer(ceil(log2(presult))) + 1;
++     end if;
++
++     for i in upper_bound downto fw-guard_bits loop
++       if presult >= 2.0**i then
++         msb := maximum(msb, i);
++         lsb := minimum(lsb, i);
++         presult    := presult - 2.0**i;
++       end if;
++     end loop;
++     result := (msb+1, lsb);
++     return result;
++
++   end function real_range;
++
+   function to_ufixed (
+     arg                     : UNSIGNED;                      -- unsigned
+     constant left_index     : INTEGER;  -- size of integer portion
+@@ -4942,11 +4993,12 @@ package body fixed_pkg is
+     l : ufixed;                         -- fixed point input
+     r : REAL)
+     return ufixed is
++    variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l +
+             to_ufixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -4956,10 +5008,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : ufixed)                         -- fixed point input
+     return ufixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_ufixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -4970,11 +5023,12 @@ package body fixed_pkg is
+     l : sfixed;                         -- fixed point input
+     r : REAL)
+     return sfixed is
++    variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l +
+             to_sfixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -4984,10 +5038,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : sfixed)                         -- fixed point input
+     return sfixed is
++    variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_sfixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -4999,11 +5054,12 @@ package body fixed_pkg is
+     l : ufixed;                         -- fixed point input
+     r : REAL)
+     return ufixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l -
+             to_ufixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5013,10 +5069,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : ufixed)                         -- fixed point input
+     return ufixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_ufixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5027,11 +5084,12 @@ package body fixed_pkg is
+     l : sfixed;                         -- fixed point input
+     r : REAL)
+     return sfixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l -
+             to_sfixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5041,10 +5099,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : sfixed)                         -- fixed point input
+     return sfixed is
++    variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_sfixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5056,11 +5115,12 @@ package body fixed_pkg is
+     l : ufixed;                         -- fixed point input
+     r : REAL)
+     return ufixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l *
+             to_ufixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5070,10 +5130,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : ufixed)                         -- fixed point input
+     return ufixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_ufixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5084,11 +5145,12 @@ package body fixed_pkg is
+     l : sfixed;                         -- fixed point input
+     r : REAL)
+     return sfixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l *
+             to_sfixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5098,10 +5160,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : sfixed)                         -- fixed point input
+     return sfixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_sfixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5113,11 +5176,12 @@ package body fixed_pkg is
+     l : ufixed;                         -- fixed point input
+     r : REAL)
+     return ufixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l /
+             to_ufixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5127,10 +5191,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : ufixed)                         -- fixed point input
+     return ufixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_ufixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5141,11 +5206,12 @@ package body fixed_pkg is
+     l : sfixed;                         -- fixed point input
+     r : REAL)
+     return sfixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l /
+             to_sfixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5155,10 +5221,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : sfixed)                         -- fixed point input
+     return sfixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_sfixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5170,11 +5237,12 @@ package body fixed_pkg is
+     l : ufixed;                         -- fixed point input
+     r : REAL)
+     return ufixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l rem
+             to_ufixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5184,10 +5252,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : ufixed)                         -- fixed point input
+     return ufixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_ufixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5198,11 +5267,12 @@ package body fixed_pkg is
+     l : sfixed;                         -- fixed point input
+     r : REAL)
+     return sfixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l rem
+             to_sfixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5212,10 +5282,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : sfixed)                         -- fixed point input
+     return sfixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_sfixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5226,11 +5297,12 @@ package body fixed_pkg is
+     l : ufixed;                         -- fixed point input
+     r : REAL)
+     return ufixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l mod
+             to_ufixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5240,10 +5312,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : ufixed)                         -- fixed point input
+     return ufixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_ufixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
+@@ -5254,11 +5327,12 @@ package body fixed_pkg is
+     l : sfixed;                         -- fixed point input
+     r : REAL)
+     return sfixed is
++      variable t : tuple := real_range(r, l'high, l'low);
+   begin
+     return (l mod
+             to_sfixed (arg            => r,
+-                       left_index     => l'high,
+-                       right_index    => l'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits));
+@@ -5268,10 +5342,11 @@ package body fixed_pkg is
+     l : REAL;
+     r : sfixed)                         -- fixed point input
+     return sfixed is
++      variable t : tuple := real_range(l, r'high, r'low);
+   begin
+     return (to_sfixed (arg            => l,
+-                       left_index     => r'high,
+-                       right_index    => r'low,
++                       left_index     => t(0),
++                       right_index    => t(1),
+                        overflow_style => fixed_overflow_style,
+                        round_style    => fixed_round_style,
+                        guard_bits     => fixed_guard_bits)
