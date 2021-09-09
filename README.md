@@ -1,4 +1,4 @@
-# spikingneuronshw
+# Digital Hardware Implementation of Optimized Spiking Neurons
 
 You can use the scripts (`build_no_dsp.sh`, `build.sh`, `eval.sh`, `plot.sh`, `rtl.sh`, `sim.sh`) to simulate, build and evaluate the neurons. You can start the Shellscripts on Windows for example with the git bash. The scripts have one mandatory argument which is the directory name of the neuron. Some scripts allow additional optional arguments. Since they are just a small wrapper for convenience, you can alternatively just execute the commands of the scripts individually.
 
